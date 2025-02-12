@@ -6,20 +6,46 @@ import image from "../../assets/image.png";
 import code from "../../assets/code.png";
 import arrow from "../../assets/arrow.png";
 import { useAuth } from "@clerk/clerk-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 export default function DashboardPage() {
-  const { userId } = useAuth();
+  const queryClient = useQueryClient();
+
+  const navigate = useNavigate();
+
+  const mutation = useMutation({
+    mutationFn: (text) => {
+      return fetch(`${import.meta.env.VITE_API_URL}/api/chats`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text }),
+      }).then((res) => res.json());
+    },
+    onSuccess: (data) => {
+      console.log("🟢 API Response:", data); // Log response để debug
+      console.log("🔹 Chat ID:", data?.chatId); // Kiểm tra giá trị chatId
+    
+      if (data?.chatId) {
+        queryClient.invalidateQueries({ queryKey: ["userChats"] });
+        navigate(`/dashboard/chats/${data.chatId}`);
+      } else {
+        console.error("Invalid response format: Expected { chatId }, but got:", data);
+      }
+    },
+    
+    
+  });
+
+  
   const handleSubmit = async (e) => {
     e.preventDefault();
     const text = e.target.text.value;
     if (!text) return;
-    await fetch("http://localhost:3000/api/chats", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ userId, text })
-    });
+
+    mutation.mutate(text);
   };
   return (
     <div className="dashboardPage">

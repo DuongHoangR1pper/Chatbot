@@ -5,23 +5,22 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import Chat from "./models/chat.js";
 import UserChats from "./models/userChats.js";
-
+import { requireAuth } from "@clerk/express";
 
 dotenv.config(); // Load biến môi trường từ file .env
 
 const port = process.env.PORT || 3000;
 const app = express();
-
 // Cấu hình CORS
 app.use(
   cors({
     origin: process.env.CLIENT_URL, // Đảm bảo CLIENT_URL được định nghĩa trong .env
-    credentials:true,
+    credentials: true
   })
 );
 
 app.use(express.json());
-
+// app.use(clerkMiddleware());
 // Kết nối MongoDB
 const connect = async () => {
   try {
@@ -44,14 +43,23 @@ app.get("/api/upload", (req, res) => {
   const result = imagekit.getAuthenticationParameters();
   res.send(result);
 });
-app.post("/api/chats", async (req, res) => {
-  const { userId, text } = req.body;
+
+// app.get("/api/test",requireAuth(), async (req, res) => {
+//   const userId = req.auth.userId
+//   console.log(userId);
+//   res.send("success!")
+
+// })
+
+app.post("/api/chats", requireAuth(), async (req, res) => {
+  const { text } = req.body;
+  const userId = req.auth.userId;
 
   try {
     // Tạo chat mới
     const newChat = new Chat({
       userId: userId,
-      history: [{ role: "user", parts: [{ text }] }],
+      history: [{ role: "user", parts: [{ text }] }]
     });
     const saveChat = await newChat.save();
 
@@ -65,9 +73,9 @@ app.post("/api/chats", async (req, res) => {
         chats: [
           {
             _id: saveChat._id,
-            title: text.substring(0, 40),
-          },
-        ],
+            title: text.substring(0, 40)
+          }
+        ]
       });
       await newUserChats.save();
     } else {
@@ -78,9 +86,9 @@ app.post("/api/chats", async (req, res) => {
           $push: {
             chats: {
               _id: saveChat._id,
-              title: text.substring(0, 40),
-            },
-          },
+              title: text.substring(0, 40)
+            }
+          }
         }
       );
     }
@@ -93,7 +101,55 @@ app.post("/api/chats", async (req, res) => {
   }
 });
 
+app.get("/api/userchats", requireAuth(), async (req, res) => {
+  const userId = req.auth.userId;
+  try {
+    const userChats = await UserChats.find({ userId });
 
+    res.status(200).send(userChats[0].chats);
+  } catch (err) {
+    console.log(err);
+    res.status(500).send("Error feerching userchats");
+  }
+});
+app.get("/api/chats/:id", requireAuth(), async (req, res) => {
+  const userId = req.auth.userId;
+
+  try {
+    const chat = await Chat.findOne({ _id: req.params.id, userId });
+
+    res.status(200).send(chat);
+  } catch (err) {
+    console.log(err);
+    res.status(500).send("Error fetching chat!");
+  }
+});
+app.put("/api/chats/:id", requireAuth(), async (req, res) => {
+  const userId = req.auth.userId;
+  const {question, answer, img} = req.body;
+  const newItems = [
+    ...(question
+      ? [{ role: "user", parts: [{ text: question }, ...(img ? [{ img }] : [])] }]
+      : []),
+    { role: "model", parts: [{ text: answer }] }
+  ];
+  try {
+    const updateChat = await Chat.updateOne(
+      { _id: req.params.id, userId },
+      {
+        $push: {
+          history: {
+            $each: newItems
+          }
+        }
+      }
+    );
+    res.status(200).send(updateChat);
+  } catch (err) {
+    console.log(err);
+    res.status(500).send("Error adding conversation!");
+  }
+});
 // Lắng nghe cổng
 app.listen(port, () => {
   connect(); // Kết nối MongoDB khi server khởi động
